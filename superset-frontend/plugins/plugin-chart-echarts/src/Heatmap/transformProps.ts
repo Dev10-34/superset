@@ -149,7 +149,9 @@ export default function transformProps(
           valueFormatter(params.value[2]),
       },
       itemStyle: {
-        borderColor: enableBorders ? supersetTheme.colors.grayscale.dark2 : undefined,
+        borderColor: enableBorders
+          ? supersetTheme.colors.grayscale.dark2
+          : undefined,
       },
       emphasis: {
         itemStyle: {

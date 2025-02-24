@@ -283,13 +283,13 @@ const config: ControlPanelConfig = {
         ],
         [
           {
-            name:'enable_borders',
-            config:{
+            name: 'enable_borders',
+            config: {
               type: 'CheckboxControl',
               label: t('Enable Borders'),
               renderTrigger: true,
               description: t(
-                'Add black borders to each element of the heatmap'
+                'Add black borders to each element of the heatmap',
               ),
             },
           },
