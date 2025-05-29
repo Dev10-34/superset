@@ -17,9 +17,9 @@
  * under the License.
  */
 
-import type {Config} from '@docusaurus/types'
+import type { Config } from '@docusaurus/types';
 import type { Options, ThemeConfig } from '@docusaurus/preset-classic';
-import { themes } from 'prism-react-renderer'
+import { themes } from 'prism-react-renderer';
 
 const { github: lightCodeTheme, vsDark: darkCodeTheme } = themes;
 
@@ -31,10 +31,13 @@ const config: Config = {
   baseUrl: '/',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'throw',
+  markdown: {
+    mermaid: true,
+  },
   favicon: '/img/favicon.ico',
   organizationName: 'apache',
   projectName: 'superset',
-  themes: ['@saucelabs/theme-github-codeblock'],
+  themes: ['@saucelabs/theme-github-codeblock', '@docusaurus/theme-mermaid'],
   plugins: [
     [
       'docusaurus-plugin-less',
@@ -201,18 +204,18 @@ const config: Config = {
       {
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          editUrl:
-          ({versionDocsDirPath, docPath}) => {
+          editUrl: ({ versionDocsDirPath, docPath }) => {
             if (docPath === 'intro.md') {
-              return 'https://github.com/apache/superset/edit/master/README.md'
+              return 'https://github.com/apache/superset/edit/master/README.md';
             }
-            return `https://github.com/apache/superset/edit/master/docs/${versionDocsDirPath}/${docPath}`
-          }
+            return `https://github.com/apache/superset/edit/master/docs/${versionDocsDirPath}/${docPath}`;
+          },
         },
         blog: {
           showReadingTime: true,
           // Please change this to your repo.
-          editUrl: 'https://github.com/facebook/docusaurus/edit/main/website/blog/',
+          editUrl:
+            'https://github.com/facebook/docusaurus/edit/main/website/blog/',
         },
         theme: {
           customCss: require.resolve('./src/styles/custom.css'),
@@ -221,81 +224,80 @@ const config: Config = {
     ],
   ],
 
-  themeConfig:
-    {
-      colorMode: {
-        defaultMode: 'dark',
-        disableSwitch: false,
-        respectPrefersColorScheme: true,
+  themeConfig: {
+    colorMode: {
+      defaultMode: 'dark',
+      disableSwitch: false,
+      respectPrefersColorScheme: true,
+    },
+    algolia: {
+      appId: 'WR5FASX5ED',
+      apiKey: 'd0d22810f2e9b614ffac3a73b26891fe',
+      indexName: 'superset-apache',
+    },
+    navbar: {
+      logo: {
+        alt: 'Superset Logo',
+        src: '/img/superset-logo-horiz.svg',
+        srcDark: '/img/superset-logo-horiz-dark.svg',
       },
-      algolia: {
-        appId: 'WR5FASX5ED',
-        apiKey: 'd0d22810f2e9b614ffac3a73b26891fe',
-        indexName: 'superset-apache',
-      },
-      navbar: {
-        logo: {
-          alt: 'Superset Logo',
-          src: '/img/superset-logo-horiz.svg',
-          srcDark: '/img/superset-logo-horiz-dark.svg',
+      items: [
+        {
+          label: 'Documentation',
+          to: '/docs/intro',
+          items: [
+            {
+              label: 'Getting Started',
+              to: '/docs/intro',
+            },
+            {
+              label: 'FAQ',
+              to: '/docs/faq',
+            },
+          ],
         },
-        items: [
-          {
-            label: 'Documentation',
-            to: '/docs/intro',
-            items: [
-              {
-                label: 'Getting Started',
-                to: '/docs/intro',
-              },
-              {
-                label: 'FAQ',
-                to: '/docs/faq',
-              },
-            ],
-          },
-          {
-            label: 'Community',
-            to: '/community',
-            items: [
-              {
-                label: 'Resources',
-                href: '/community',
-              },
-              {
-                label: 'GitHub',
-                href: 'https://github.com/apache/superset',
-              },
-              {
-                label: 'Slack',
-                href: 'http://bit.ly/join-superset-slack',
-              },
-              {
-                label: 'Mailing List',
-                href: 'https://lists.apache.org/list.html?dev@superset.apache.org',
-              },
-              {
-                label: 'Stack Overflow',
-                href: 'https://stackoverflow.com/questions/tagged/apache-superset',
-              },
-            ],
-          },
-          {
-            href: '/docs/intro',
-            position: 'right',
-            className: 'default-button-theme get-started-button',
-            label: 'Get Started',
-          },
-          {
-            href: 'https://github.com/apache/superset',
-            position: 'right',
-            className: 'github-button',
-          },
-        ],
-      },
-      footer: {
-        links: [],
-        copyright: `
+        {
+          label: 'Community',
+          to: '/community',
+          items: [
+            {
+              label: 'Resources',
+              href: '/community',
+            },
+            {
+              label: 'GitHub',
+              href: 'https://github.com/apache/superset',
+            },
+            {
+              label: 'Slack',
+              href: 'http://bit.ly/join-superset-slack',
+            },
+            {
+              label: 'Mailing List',
+              href: 'https://lists.apache.org/list.html?dev@superset.apache.org',
+            },
+            {
+              label: 'Stack Overflow',
+              href: 'https://stackoverflow.com/questions/tagged/apache-superset',
+            },
+          ],
+        },
+        {
+          href: '/docs/intro',
+          position: 'right',
+          className: 'default-button-theme get-started-button',
+          label: 'Get Started',
+        },
+        {
+          href: 'https://github.com/apache/superset',
+          position: 'right',
+          className: 'github-button',
+        },
+      ],
+    },
+    footer: {
+      links: [],
+      copyright: `
           <div class="footer__applitools">
             We use &nbsp;<a href="https://applitools.com/" target="_blank" rel="nofollow"><img src="/img/applitools.png" title="Applitools" /></a>
           </div>
@@ -318,24 +320,51 @@ const config: Config = {
           <!-- telemetry/analytics pixel: -->
           <img referrerPolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=39ae6855-95fc-4566-86e5-360d542b0a68" />
           `,
+    },
+    prism: {
+      theme: lightCodeTheme,
+      darkTheme: darkCodeTheme,
+    },
+    docs: {
+      sidebar: {
+        hideable: true,
       },
-      prism: {
-        theme: lightCodeTheme,
-        darkTheme: darkCodeTheme,
-      },
-      docs: {
-        sidebar: {
-          hideable: true,
-        }
-      },
-    } satisfies ThemeConfig,
+    },
+  } satisfies ThemeConfig,
   scripts: [
-    '/script/matomo.js',
     // {
     //   src: 'https://www.bugherd.com/sidebarv2.js?apikey=enilpiu7bgexxsnoqfjtxa',
     //   async: true,
     // },
+    '/script/matomo.js',
+    {
+      src: 'https://widget.kapa.ai/kapa-widget.bundle.js',
+      async: true,
+      'data-website-id': 'c6a8a8b8-3127-48f9-97a7-51e9e10d20d0',
+      'data-project-name': 'Apache Superset',
+      'data-project-color': '#FFFFFF',
+      'data-project-logo':
+        'https://images.seeklogo.com/logo-png/50/2/superset-icon-logo-png_seeklogo-500354.png',
+      'data-modal-override-open-id': 'ask-ai-input',
+      'data-modal-override-open-class': 'search-input',
+      'data-modal-disclaimer':
+        'This is a custom LLM for Apache Superset with access to all [documentation](superset.apache.org/docs/intro/), [GitHub Open Issues, PRs and READMEs](github.com/apache/superset).&#10;&#10;Companies deploy assistants like this ([built by kapa.ai](https://kapa.ai)) on docs via [website widget](https://docs.kapa.ai/integrations/website-widget) (Docker, Reddit), in [support forms](https://docs.kapa.ai/integrations/support-form-deflector) for ticket deflection (Monday.com, Mapbox), or as [Slack bots](https://docs.kapa.ai/integrations/slack-bot) with private sources.',
+      'data-modal-example-questions':
+        'How do I install Superset?,How can I contribute to Superset?',
+      'data-button-text-color': 'rgb(81,166,197)',
+      'data-modal-header-bg-color': '#ffffff',
+      'data-modal-title-color': 'rgb(81,166,197)',
+      'data-modal-title': 'Apache Superset AI',
+      'data-modal-disclaimer-text-color': '#000000',
+      'data-consent-required': 'true',
+      'data-consent-screen-disclaimer':
+        "By clicking \"I agree, let's chat\", you consent to the use of the AI assistant in accordance with kapa.ai's [Privacy Policy](https://www.kapa.ai/content/privacy-policy). This service uses reCAPTCHA, which requires your consent to Google's [Privacy Policy](https://policies.google.com/privacy) and [Terms of Service](https://policies.google.com/terms). By proceeding, you explicitly agree to both kapa.ai's and Google's privacy policies.",
+    },
   ],
+  customFields: {
+    matomoUrl: 'https://analytics.apache.org',
+    matomoSiteId: '22',
+  },
 };
 
 export default config;
