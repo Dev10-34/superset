@@ -16,7 +16,9 @@
 # under the License.
 from __future__ import annotations
 
+import copy
 import unittest
+from datetime import timedelta
 from io import BytesIO
 from unittest.mock import ANY, patch
 from zipfile import is_zipfile, ZipFile
@@ -24,6 +26,7 @@ from zipfile import is_zipfile, ZipFile
 import prison
 import pytest
 import yaml
+from freezegun import freeze_time
 from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
@@ -59,9 +62,7 @@ from tests.integration_tests.fixtures.energy_dashboard import (
 )
 from tests.integration_tests.fixtures.importexport import (
     database_config,
-    database_metadata_config,
     dataset_config,
-    dataset_metadata_config,
     dataset_ui_export,
 )
 
@@ -77,7 +78,7 @@ class TestDatasetApi(SupersetTestCase):
     def tearDown(self):
         for item in self.items_to_delete:
             db.session.delete(item)
-        db.session.commit()
+            db.session.commit()
         super().tearDown()
 
     @staticmethod
@@ -190,22 +191,6 @@ class TestDatasetApi(SupersetTestCase):
             )
             .one()
         )
-
-    def create_dataset_import(self) -> BytesIO:
-        buf = BytesIO()
-        with ZipFile(buf, "w") as bundle:
-            with bundle.open("dataset_export/metadata.yaml", "w") as fp:
-                fp.write(yaml.safe_dump(dataset_metadata_config).encode())
-            with bundle.open(
-                "dataset_export/databases/imported_database.yaml", "w"
-            ) as fp:
-                fp.write(yaml.safe_dump(database_config).encode())
-            with bundle.open(
-                "dataset_export/datasets/imported_dataset.yaml", "w"
-            ) as fp:
-                fp.write(yaml.safe_dump(dataset_config).encode())
-        buf.seek(0)
-        return buf
 
     @pytest.mark.usefixtures("load_energy_table_with_slice")
     def test_user_gets_all_datasets(self):
@@ -989,6 +974,36 @@ class TestDatasetApi(SupersetTestCase):
         assert rv.status_code == 422
         assert data == {"message": "Dataset could not be created."}
 
+    @patch("superset.commands.dataset.create.security_manager.raise_for_access")
+    def test_create_dataset_with_invalid_sql_validation(self, mock_raise_for_access):
+        """
+        Dataset API: Test create dataset with invalid SQL during validation returns 422
+        """
+        from superset.exceptions import SupersetParseError
+
+        # Mock raise_for_access to throw SupersetParseError during validation
+        mock_raise_for_access.side_effect = SupersetParseError(
+            sql="SELECT FROM WHERE AND",
+            engine="postgresql",
+            message="Invalid SQL syntax",
+        )
+
+        self.login(ADMIN_USERNAME)
+        examples_db = get_example_database()
+        dataset_data = {
+            "database": examples_db.id,
+            "schema": "",
+            "table_name": "invalid_sql_table",
+            "sql": "SELECT FROM WHERE AND",
+        }
+        uri = "api/v1/dataset/"
+        rv = self.client.post(uri, json=dataset_data)
+        data = json.loads(rv.data.decode("utf-8"))
+        # The error is caught during validation and returns 422
+        assert rv.status_code == 422
+        assert "sql" in data["message"]
+        assert "Invalid SQL:" in data["message"]["sql"][0]
+
     def test_update_dataset_preserve_ownership(self):
         """
         Dataset API: Test update dataset preserves owner list (if un-changed)
@@ -1144,9 +1159,9 @@ class TestDatasetApi(SupersetTestCase):
         """
         Dataset API: Test update dataset create column
         """
-
         # create example dataset by Command
         dataset = self.insert_default_dataset()
+        current_changed_on = dataset.changed_on
 
         new_column_data = {
             "column_name": "new_col",
@@ -1188,13 +1203,16 @@ class TestDatasetApi(SupersetTestCase):
             metric.pop("type_generic", None)
 
         data["result"]["metrics"].append(new_metric_data)
-        rv = self.client.put(
-            uri,
-            json={
-                "columns": data["result"]["columns"],
-                "metrics": data["result"]["metrics"],
-            },
-        )
+
+        with freeze_time() as frozen:
+            frozen.tick(delta=timedelta(seconds=3))
+            rv = self.client.put(
+                uri,
+                json={
+                    "columns": data["result"]["columns"],
+                    "metrics": data["result"]["metrics"],
+                },
+            )
 
         assert rv.status_code == 200
 
@@ -1232,6 +1250,10 @@ class TestDatasetApi(SupersetTestCase):
         assert metrics[1].verbose_name == new_metric_data["verbose_name"]
         assert metrics[1].warning_text == new_metric_data["warning_text"]
         assert str(metrics[1].uuid) == new_metric_data["uuid"]
+
+        # Validate that the changed_on is updated
+        updated_dataset = db.session.query(SqlaTable).filter_by(id=dataset.id).first()
+        assert updated_dataset.changed_on > current_changed_on
 
         self.items_to_delete = [dataset]
 
@@ -1451,6 +1473,29 @@ class TestDatasetApi(SupersetTestCase):
             "message": {"metrics": ["One or more metrics are duplicated"]}
         }
         assert data == expected_result
+        self.items_to_delete = [dataset]
+
+    def test_update_dataset_update_metric_invalid_currency(self):
+        """
+        Dataset API: Test update dataset metric with an invalid currency config
+        """
+
+        dataset = self.insert_default_dataset()
+
+        self.login(ADMIN_USERNAME)
+        uri = f"api/v1/dataset/{dataset.id}"
+        data = {
+            "metrics": [
+                {
+                    "metric_name": "test",
+                    "expression": "COUNT(*)",
+                    "currency": '{"symbol": "USD", "symbolPosition": "suffix"}',
+                },
+            ]
+        }
+        rv = self.put_assert_metric(uri, data, "put")
+        assert rv.status_code == 422
+
         self.items_to_delete = [dataset]
 
     def test_update_dataset_item_gamma(self):
@@ -2405,7 +2450,7 @@ class TestDatasetApi(SupersetTestCase):
         self.login(ADMIN_USERNAME)
         uri = "api/v1/dataset/import/"
 
-        buf = self.create_dataset_import()
+        buf = self.create_import_v1_zip_file("dataset")
         form_data = {
             "formData": (buf, "dataset_export.zip"),
             "sync_columns": "true",
@@ -2428,10 +2473,7 @@ class TestDatasetApi(SupersetTestCase):
         assert dataset.table_name == "imported_dataset"
         assert str(dataset.uuid) == dataset_config["uuid"]
 
-        db.session.delete(dataset)
-        db.session.commit()
-        db.session.delete(database)
-        db.session.commit()
+        self.items_to_delete = [dataset, database]
 
     def test_import_dataset_v0_export(self):
         num_datasets = db.session.query(SqlaTable).count()
@@ -2468,7 +2510,7 @@ class TestDatasetApi(SupersetTestCase):
         self.login(ADMIN_USERNAME)
         uri = "api/v1/dataset/import/"
 
-        buf = self.create_dataset_import()
+        buf = self.create_import_v1_zip_file("dataset")
         form_data = {
             "formData": (buf, "dataset_export.zip"),
         }
@@ -2479,7 +2521,7 @@ class TestDatasetApi(SupersetTestCase):
         assert response == {"message": "OK"}
 
         # import again without overwrite flag
-        buf = self.create_dataset_import()
+        buf = self.create_import_v1_zip_file("dataset")
         form_data = {
             "formData": (buf, "dataset_export.zip"),
         }
@@ -2494,7 +2536,7 @@ class TestDatasetApi(SupersetTestCase):
                     "error_type": "GENERIC_COMMAND_ERROR",
                     "level": "warning",
                     "extra": {
-                        "datasets/imported_dataset.yaml": "Dataset already exists and `overwrite=true` was not passed",  # noqa: E501
+                        "datasets/dataset.yaml": "Dataset already exists and `overwrite=true` was not passed",  # noqa: E501
                         "issue_codes": [
                             {
                                 "code": 1010,
@@ -2507,7 +2549,7 @@ class TestDatasetApi(SupersetTestCase):
         }
 
         # import with overwrite flag
-        buf = self.create_dataset_import()
+        buf = self.create_import_v1_zip_file("dataset")
         form_data = {
             "formData": (buf, "dataset_export.zip"),
             "overwrite": "true",
@@ -2524,10 +2566,7 @@ class TestDatasetApi(SupersetTestCase):
         )
         dataset = database.tables[0]
 
-        db.session.delete(dataset)
-        db.session.commit()
-        db.session.delete(database)
-        db.session.commit()
+        self.items_to_delete = [dataset, database]
 
     def test_import_dataset_invalid(self):
         """
@@ -2537,20 +2576,7 @@ class TestDatasetApi(SupersetTestCase):
         self.login(ADMIN_USERNAME)
         uri = "api/v1/dataset/import/"
 
-        buf = BytesIO()
-        with ZipFile(buf, "w") as bundle:
-            with bundle.open("dataset_export/metadata.yaml", "w") as fp:
-                fp.write(yaml.safe_dump(database_metadata_config).encode())
-            with bundle.open(
-                "dataset_export/databases/imported_database.yaml", "w"
-            ) as fp:
-                fp.write(yaml.safe_dump(database_config).encode())
-            with bundle.open(
-                "dataset_export/datasets/imported_dataset.yaml", "w"
-            ) as fp:
-                fp.write(yaml.safe_dump(dataset_config).encode())
-        buf.seek(0)
-
+        buf = self.create_import_v1_zip_file("database", datasets=[dataset_config])
         form_data = {
             "formData": (buf, "dataset_export.zip"),
         }
@@ -2624,6 +2650,67 @@ class TestDatasetApi(SupersetTestCase):
                 }
             ]
         }
+
+    def test_import_dataset_currency_config(self):
+        """
+        Dataset API: Test import metric with currency config.
+
+        This test confirms that importing a metric with a currency config
+        set as either string (for backwards compatibility) or dict works properly.
+        """
+        self.login(ADMIN_USERNAME)
+        uri = "api/v1/dataset/import/"
+        dataset_with_currency = copy.deepcopy(dataset_config)
+        dataset_with_currency["metrics"][0]["currency"] = {
+            "symbol": "USD",
+            "symbolPosition": "left",
+        }
+        dataset_with_currency["metrics"].append(
+            {
+                "metric_name": "count_new",
+                "verbose_name": "",
+                "metric_type": None,
+                "expression": "count(1)",
+                "description": None,
+                "d3format": None,
+                "extra": {},
+                "warning_text": None,
+                "currency": '{"symbol": "EUR","symbolPosition": "left"}',
+            }
+        )
+
+        buf = self.create_import_v1_zip_file(
+            "dataset", datasets=[dataset_with_currency]
+        )
+        form_data = {
+            "formData": (buf, "dataset_export.zip"),
+        }
+        rv = self.client.post(uri, data=form_data, content_type="multipart/form-data")
+        response = json.loads(rv.data.decode("utf-8"))
+
+        assert rv.status_code == 200
+        assert response == {"message": "OK"}
+
+        database = (
+            db.session.query(Database).filter_by(uuid=database_config["uuid"]).one()
+        )
+
+        assert database.database_name == database_config["database_name"]
+
+        assert len(database.tables) == 1
+        assert len(database.tables[0].metrics) == 2
+        final_metrics = []
+        for metric in database.tables[0].metrics:
+            final_metrics.append(metric.currency)
+        assert final_metrics == [
+            {"symbol": "USD", "symbolPosition": "left"},
+            {"symbol": "EUR", "symbolPosition": "left"},
+        ]
+        dataset = database.tables[0]
+        assert dataset.table_name == dataset_with_currency["table_name"]
+        assert str(dataset.uuid) == dataset_with_currency["uuid"]
+
+        self.items_to_delete = [dataset, database]
 
     @pytest.mark.usefixtures("create_datasets")
     def test_get_datasets_is_certified_filter(self):

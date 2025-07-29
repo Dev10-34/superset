@@ -29,20 +29,20 @@ from superset.db_engine_specs.base import (
 from superset.db_engine_specs.mysql import MySQLEngineSpec
 from superset.db_engine_specs.sqlite import SqliteEngineSpec
 from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
-from superset.sql_parse import Table
+from superset.sql.parse import Table
 from superset.utils.database import get_example_database
 from tests.integration_tests.base_tests import SupersetTestCase
 from tests.integration_tests.test_app import app
 
-from ..fixtures.birth_names_dashboard import (
+from ..fixtures.birth_names_dashboard import (  # noqa: TID252
     load_birth_names_dashboard_with_slices,  # noqa: F401
     load_birth_names_data,  # noqa: F401
 )
-from ..fixtures.energy_dashboard import (
+from ..fixtures.energy_dashboard import (  # noqa: TID252
     load_energy_table_data,  # noqa: F401
     load_energy_table_with_slice,  # noqa: F401
 )
-from ..fixtures.pyodbcRow import Row
+from ..fixtures.pyodbcRow import Row  # noqa: TID252
 
 
 class SupersetTestCases(SupersetTestCase):

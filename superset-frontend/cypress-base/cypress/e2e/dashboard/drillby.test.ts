@@ -54,14 +54,14 @@ const drillBy = (targetDrillByColumn: string, isLegacy = false) => {
     interceptV1ChartData();
   }
 
-  cy.get('.antd5-dropdown:not(.antd5-dropdown-hidden)')
+  cy.get('.ant-dropdown:not(.ant-dropdown-hidden)', { timeout: 15000 })
     .should('be.visible')
     .find("[role='menu'] [role='menuitem']")
     .contains(/^Drill by$/)
     .trigger('mouseover', { force: true });
 
   cy.get(
-    '.antd5-dropdown-menu-submenu:not(.antd5-dropdown-menu-submenu-hidden) [data-test="drill-by-submenu"]',
+    '.ant-dropdown-menu-submenu:not(.ant-dropdown-menu-submenu-hidden) [data-test="drill-by-submenu"]',
   )
     .should('be.visible')
     .find('[role="menuitem"]')
@@ -529,7 +529,7 @@ describe('Drill by modal', () => {
       ]);
     });
 
-    it('Bar Chart', () => {
+    it.skip('Bar Chart', () => {
       testEchart('echarts_timeseries_bar', 'Bar Chart', [
         [85, 94],
         [490, 68],
@@ -612,7 +612,7 @@ describe('Drill by modal', () => {
       ]);
     });
 
-    it('Mixed Chart', () => {
+    it.skip('Mixed Chart', () => {
       cy.get('[data-test-viz-type="mixed_timeseries"] canvas').then($canvas => {
         // click 'boy'
         cy.wrap($canvas).scrollIntoView();

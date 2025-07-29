@@ -75,8 +75,7 @@ from superset.extensions import (
 )
 from superset.models.helpers import AuditMixinNullable, ImportExportMixin, UUIDMixin
 from superset.result_set import SupersetResultSet
-from superset.sql.parse import SQLScript
-from superset.sql_parse import Table
+from superset.sql.parse import SQLScript, Table
 from superset.superset_typing import (
     DbapiDescription,
     OAuth2ClientConfig,
@@ -120,6 +119,18 @@ class CssTemplate(AuditMixinNullable, UUIDMixin, Model):
     id = Column(Integer, primary_key=True)
     template_name = Column(String(250))
     css = Column(utils.MediumText(), default="")
+
+
+class Theme(AuditMixinNullable, ImportExportMixin, Model):
+    """Themes for dashboards"""
+
+    __tablename__ = "themes"
+    id = Column(Integer, primary_key=True)
+    theme_name = Column(String(250))
+    json_data = Column(utils.MediumText(), default="")
+    is_system = Column(Boolean, default=False, nullable=False)
+
+    export_fields = ["theme_name", "json_data"]
 
 
 class ConfigurationMethod(StrEnum):

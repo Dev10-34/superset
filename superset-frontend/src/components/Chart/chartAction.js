@@ -43,7 +43,7 @@ import { updateDataMask } from 'src/dataMask/actions';
 import { waitForAsyncData } from 'src/middleware/asyncEvent';
 import { ensureAppRoot } from 'src/utils/pathUtils';
 import { safeStringify } from 'src/utils/safeStringify';
-import { extendedDayjs } from 'src/utils/dates';
+import { extendedDayjs } from '@superset-ui/core/utils/dates';
 
 export const CHART_UPDATE_STARTED = 'CHART_UPDATE_STARTED';
 export function chartUpdateStarted(queryController, latestQueryFormData, key) {
@@ -537,7 +537,11 @@ export function postChartFormData(
 
 export function redirectSQLLab(formData, history) {
   return dispatch => {
-    getChartDataRequest({ formData, resultFormat: 'json', resultType: 'query' })
+    getChartDataRequest({
+      formData,
+      resultFormat: 'json',
+      resultType: 'query',
+    })
       .then(({ json }) => {
         const redirectUrl = '/sqllab/';
         const payload = {

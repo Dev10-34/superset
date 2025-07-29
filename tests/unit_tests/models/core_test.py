@@ -16,8 +16,6 @@
 # under the License.
 
 # pylint: disable=import-outside-toplevel
-
-
 from datetime import datetime
 
 import pytest
@@ -38,8 +36,7 @@ from superset.connectors.sqla.models import SqlaTable, TableColumn
 from superset.errors import SupersetErrorType
 from superset.exceptions import OAuth2Error, OAuth2RedirectError
 from superset.models.core import Database
-from superset.sql.parse import LimitMethod
-from superset.sql_parse import Table
+from superset.sql.parse import LimitMethod, Table
 from superset.utils import json
 from tests.unit_tests.conftest import with_feature_flags
 

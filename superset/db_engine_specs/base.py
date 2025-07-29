@@ -54,17 +54,18 @@ from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import literal_column, quoted_name, text
-from sqlalchemy.sql.expression import ColumnClause, Select, TextClause
+from sqlalchemy.sql.expression import BinaryExpression, ColumnClause, Select, TextClause
 from sqlalchemy.types import TypeEngine
 
-from superset import db, sql_parse
+from superset import db
 from superset.constants import QUERY_CANCEL_KEY, TimeGrain as TimeGrainConstants
 from superset.databases.utils import get_table_metadata, make_url_safe
 from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
-from superset.exceptions import DisallowedSQLFunction, OAuth2Error, OAuth2RedirectError
+from superset.exceptions import OAuth2Error, OAuth2RedirectError
 from superset.sql.parse import (
     BaseSQLStatement,
     LimitMethod,
+    RLSMethod,
     SQLScript,
     SQLStatement,
     Table,
@@ -372,13 +373,14 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
     allows_cte_in_subquery = True
     # Define alias for CTE
     cte_alias = "__cte"
-    # This set will give keywords for select statements
-    # to consider for the engines with TOP SQL parsing
-    select_keywords: set[str] = {"SELECT"}
     # A set of disallowed connection query parameters by driver name
     disallow_uri_query_params: dict[str, set[str]] = {}
     # A Dict of query parameters that will always be used on every connection
     # by driver name
+
+    # Whether to use equality operators (= true/false) instead of IS operators
+    # for boolean filters. Some databases like Snowflake don't support IS true/false
+    use_equality_for_boolean_filters = False
     enforce_uri_query_params: dict[str, dict[str, Any]] = {}
 
     force_column_alias_quotes = False
@@ -437,6 +439,21 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
     # is determined only after the specific query is executed and it will update
     # the `cancel_query` value in the `extra` field of the `query` object
     has_query_id_before_execute = True
+
+    @classmethod
+    def get_rls_method(cls) -> RLSMethod:
+        """
+        Returns the RLS method to be used for this engine.
+
+        There are two ways to insert RLS: either replacing the table with a subquery
+        that has the RLS, or appending the RLS to the ``WHERE`` clause. The former is
+        safer, but not supported in all databases.
+        """
+        return (
+            RLSMethod.AS_SUBQUERY
+            if cls.allows_subqueries and cls.allows_alias_in_select
+            else RLSMethod.AS_PREDICATE
+        )
 
     @classmethod
     def is_oauth2_enabled(cls) -> bool:
@@ -1190,6 +1207,78 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         return None
 
     @classmethod
+    def handle_boolean_filter(
+        cls, sqla_col: Any, op: str, value: bool
+    ) -> BinaryExpression:
+        """
+        Handle boolean filter operations with engine-specific logic.
+
+        By default, uses SQLAlchemy's IS operator (column IS true/false).
+        Engines that don't support IS for boolean values can override
+        use_equality_for_boolean_filters to use equality operators instead.
+
+        :param sqla_col: SQLAlchemy column element
+        :param op: Filter operator (IS_TRUE or IS_FALSE)
+        :param value: Boolean value (True or False)
+        :return: SQLAlchemy expression for the boolean filter
+        """
+        if cls.use_equality_for_boolean_filters:
+            return sqla_col == value
+        else:
+            return sqla_col.is_(value)
+
+    @classmethod
+    def handle_null_filter(
+        cls,
+        sqla_col: Any,
+        op: utils.FilterOperator,
+    ) -> BinaryExpression:
+        """
+        Handle null/not null filter operations.
+
+        :param sqla_col: SQLAlchemy column element
+        :param op: Filter operator (IS_NULL or IS_NOT_NULL)
+        :return: SQLAlchemy expression for the null filter
+        """
+        from superset.utils import core as utils
+
+        if op == utils.FilterOperator.IS_NULL:
+            return sqla_col.is_(None)
+        elif op == utils.FilterOperator.IS_NOT_NULL:
+            return sqla_col.isnot(None)
+        else:
+            raise ValueError(f"Invalid null filter operator: {op}")
+
+    @classmethod
+    def handle_comparison_filter(
+        cls, sqla_col: Any, op: utils.FilterOperator, value: Any
+    ) -> BinaryExpression:
+        """
+        Handle comparison filter operations (=, !=, >, <, >=, <=).
+
+        :param sqla_col: SQLAlchemy column element
+        :param op: Filter operator
+        :param value: Filter value
+        :return: SQLAlchemy expression for the comparison filter
+        """
+        from superset.utils import core as utils
+
+        if op == utils.FilterOperator.EQUALS:
+            return sqla_col == value
+        elif op == utils.FilterOperator.NOT_EQUALS:
+            return sqla_col != value
+        elif op == utils.FilterOperator.GREATER_THAN:
+            return sqla_col > value
+        elif op == utils.FilterOperator.LESS_THAN:
+            return sqla_col < value
+        elif op == utils.FilterOperator.GREATER_THAN_OR_EQUALS:
+            return sqla_col >= value
+        elif op == utils.FilterOperator.LESS_THAN_OR_EQUALS:
+            return sqla_col <= value
+        else:
+            raise ValueError(f"Invalid comparison filter operator: {op}")
+
+    @classmethod
     def handle_cursor(cls, cursor: Any, query: Query) -> None:
         """Handle a live cursor between the execute and fetchall calls
 
@@ -1533,7 +1622,7 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         cols: list[ResultSetColumnType] | None = None,
     ) -> str:
         """
-        Generate a "SELECT * from [schema.]table_name" query with appropriate limit.
+        Generate a "SELECT * from [catalog.][schema.]table_name" query with limit.
 
         WARNING: expects only unquoted table and schema names.
 
@@ -1547,6 +1636,9 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         :param cols: Columns to include in query
         :return: SQL query
         """
+        if not cls.supports_cross_catalog_queries:
+            table = Table(table.table, table.schema, None)
+
         # pylint: disable=redefined-outer-name
         fields: str | list[Any] = "*"
         cols = cols or []
@@ -1751,14 +1843,6 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         :param kwargs: kwargs to be passed to cursor.execute()
         :return:
         """
-        if not cls.allows_sql_comments:
-            query = sql_parse.strip_comments_from_sql(query, engine=cls.engine)
-        disallowed_functions = current_app.config["DISALLOWED_SQL_FUNCTIONS"].get(
-            cls.engine, set()
-        )
-        if sql_parse.check_sql_functions_exist(query, disallowed_functions, cls.engine):
-            raise DisallowedSQLFunction(disallowed_functions)
-
         if cls.arraysize:
             cursor.arraysize = cls.arraysize
         try:

@@ -20,10 +20,10 @@ import polyline
 from sqlalchemy import inspect, String, Text
 
 from superset import db
-from superset.sql_parse import Table
+from superset.sql.parse import Table
 from superset.utils import json
 
-from ..utils.database import get_example_database
+from ..utils.database import get_example_database  # noqa: TID252
 from .helpers import get_table_connector_registry, read_example_data
 
 logger = logging.getLogger(__name__)

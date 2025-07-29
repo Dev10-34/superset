@@ -22,10 +22,10 @@ from sqlalchemy import BigInteger, Date, DateTime, inspect, String
 
 from superset import app, db
 from superset.models.slice import Slice
-from superset.sql_parse import Table
+from superset.sql.parse import Table
 from superset.utils.core import DatasourceType
 
-from ..utils.database import get_example_database
+from ..utils.database import get_example_database  # noqa: TID252
 from .helpers import (
     get_slice_json,
     get_table_connector_registry,
